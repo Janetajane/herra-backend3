@@ -2,51 +2,63 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const axios = require('axios');
-const FormData = require('form-data');
 
 const app = express();
 const upload = multer();
 
-// Izinkan web HP Anda mengakses server ini
 app.use(cors());
 app.use(express.json());
 
-const MAGNIFIC_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
+// Endpoint resmi Magnific / Freepik untuk AI Image
+const MAGNIFIC_URL = 'https://api.magnific.com/v1/ai/text-to-image';
 
-// ROUTE 1: MENGIRIM FOTO & PROMPT KE MAGNIFIC
 app.post('/generate', upload.single('foto1'), async (req, res) => {
     try {
         const { promptUtama } = req.body;
         const foto1 = req.file;
         const API_KEY = process.env.MAGNIFIC_API_KEY;
 
-        if (!API_KEY) return res.status(500).json({ status: "Error", pesan: "MAGNIFIC_API_KEY belum dipasang di Railway!" });
+        if (!API_KEY) return res.status(500).json({ status: "Error", pesan: "MAGNIFIC_API_KEY belum diset" });
         if (!foto1) return res.status(400).json({ status: "Error", pesan: "Foto wajib diunggah." });
 
-        const payload = new FormData();
-        // Membungkus foto dari memori (RAM) langsung ke form
-        payload.append('image', foto1.buffer, { filename: 'image.jpg', contentType: foto1.mimetype });
-        payload.append('prompt', promptUtama);
+        // PERBAIKAN: Ubah foto menjadi Base64 (Format teks rahasia yang diminta Magnific)
+        const base64Image = foto1.buffer.toString('base64');
+        const imageFormat = `data:${foto1.mimetype};base64,${base64Image}`;
+
+        // PERBAIKAN: Bungkus payload menjadi JSON murni
+        const payload = {
+            prompt: promptUtama,
+            image: imageFormat
+        };
 
         const response = await axios.post(MAGNIFIC_URL, payload, {
             headers: { 
-                ...payload.getHeaders(),
+                'Content-Type': 'application/json',
                 'x-magnific-api-key': API_KEY 
             }
         });
 
-        // Tangkap ID Antrean Magnific
-        const taskId = response.data.task_id || (response.data.data && response.data.data[0].task_id);
-        res.json({ status: "PENDING", data: { task1: taskId } });
+        // Tangkap respon dari Magnific
+        const data = response.data;
+        const taskId = data.task_id || (data.data && data.data[0].task_id);
+
+        // Jika Magnific API langsung memberikan hasil gambar (tanpa antre)
+        if (!taskId && data.data && data.data[0].url) {
+            return res.json({ status: "COMPLETED", image_url: data.data[0].url });
+        } else if (!taskId && data.data && data.data[0].base64) {
+            return res.json({ status: "COMPLETED", image_url: `data:image/jpeg;base64,${data.data[0].base64}` });
+        }
+
+        res.json({ status: "PENDING", data: { task1: taskId || 'unknown' } });
 
     } catch (error) {
-        console.error(error);
+        console.error(error.response?.data || error.message);
         const errorMsg = error.response?.data?.message || error.response?.data || error.message;
-        res.status(500).json({ status: "Error", pesan: "Ditolak Magnific: " + JSON.stringify(errorMsg) });
+        res.status(500).json({ status: "Error", pesan: errorMsg });
     }
 });
 
-// ROUTE 2: CEK STATUS ANTREAN
+// ROUTE 2: CEK STATUS (Jika masuk antrean)
 app.get('/status', async (req, res) => {
     try {
         const { taskId } = req.query;
@@ -56,7 +68,6 @@ app.get('/status', async (req, res) => {
         try {
             response = await axios.get(`${MAGNIFIC_URL}?task_id=${taskId}`, { headers: { 'x-magnific-api-key': API_KEY } });
         } catch (err) {
-            // Jika pakai slash (berbeda format)
             if (err.response && err.response.status === 404) {
                  response = await axios.get(`${MAGNIFIC_URL}/${taskId}`, { headers: { 'x-magnific-api-key': API_KEY } });
             } else {
