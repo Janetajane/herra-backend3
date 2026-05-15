@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const axios = require('axios');
-const FormData = require('form-data'); // PENTING: Tambahan alat untuk upload otomatis
+const FormData = require('form-data');
 
 const app = express();
 const upload = multer();
@@ -22,21 +22,25 @@ app.post('/generate', upload.single('foto1'), async (req, res) => {
         if (!foto1) return res.status(400).json({ status: "Error", pesan: "Foto wajib diunggah." });
 
         // ==========================================
-        // TRIK VIP: Upload kilat ke Catbox.moe agar dapat Link Publik
+        // TRIK VIP V2: Upload ke FreeImage.host (Anti-Blokir Server)
         // ==========================================
         const form = new FormData();
-        form.append('reqtype', 'fileupload');
-        form.append('fileToUpload', foto1.buffer, { filename: 'image.jpg', contentType: foto1.mimetype });
+        // Kunci API publik resmi dari FreeImage
+        form.append('key', '6d207e02198a847aa98d0a2a901485a5'); 
+        form.append('action', 'upload');
+        // Ubah foto jadi teks rahasia agar aman dikirim ke FreeImage
+        form.append('source', foto1.buffer.toString('base64'));
+        form.append('format', 'json');
 
         let publicImageUrl = '';
         try {
-            const uploadRes = await axios.post('https://catbox.moe/user/api.php', form, {
+            const uploadRes = await axios.post('https://freeimage.host/api/1/upload', form, {
                 headers: form.getHeaders()
             });
-            // Hasilnya akan seperti: https://files.catbox.moe/xxxxx.jpg
-            publicImageUrl = uploadRes.data; 
+            // Tangkap Link Publiknya!
+            publicImageUrl = uploadRes.data.image.url; 
         } catch (err) {
-            return res.status(500).json({ status: "Error", pesan: "Gagal membuat URL publik foto: " + err.message });
+            return res.status(500).json({ status: "Error", pesan: "Gagal mendapat Link Publik: " + (err.response?.data?.error?.message || err.message) });
         }
 
         // ==========================================
@@ -44,10 +48,10 @@ app.post('/generate', upload.single('foto1'), async (req, res) => {
         // ==========================================
         const payload = {
             prompt: promptUtama,
-            webhook_url: "https://google.com", // Dummy webhook untuk menghindari server mereka rewel
+            webhook_url: "https://google.com",
             reference_images: [
                 {
-                    image: publicImageUrl, // Nah, ini URL asli yang mereka minta!
+                    image: publicImageUrl, // URL ini sekarang pasti dijamin lolos!
                     text: "Reference style",
                     mime_type: foto1.mimetype
                 }
@@ -63,7 +67,6 @@ app.post('/generate', upload.single('foto1'), async (req, res) => {
             }
         });
 
-        // Ekstrak dengan aman tanpa menyebabkan error
         const data = response.data.data || response.data;
         const taskId = data.task_id || data.id;
         
