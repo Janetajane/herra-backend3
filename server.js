@@ -9,8 +9,8 @@ const upload = multer();
 app.use(cors());
 app.use(express.json());
 
-// Endpoint resmi Magnific / Freepik untuk AI Image
-const MAGNIFIC_URL = 'https://api.magnific.com/v1/ai/text-to-image';
+// PERBAIKAN 1: Pindah ke pintu yang BENAR untuk menerima Foto + Teks
+const MAGNIFIC_URL = 'https://api.magnific.com/v1/ai/image-upscaler';
 
 app.post('/generate', upload.single('foto1'), async (req, res) => {
     try {
@@ -21,14 +21,16 @@ app.post('/generate', upload.single('foto1'), async (req, res) => {
         if (!API_KEY) return res.status(500).json({ status: "Error", pesan: "MAGNIFIC_API_KEY belum diset" });
         if (!foto1) return res.status(400).json({ status: "Error", pesan: "Foto wajib diunggah." });
 
-        // PERBAIKAN: Ubah foto menjadi Base64 (Format teks rahasia yang diminta Magnific)
+        // Ubah foto jadi teks rahasia (Base64)
         const base64Image = foto1.buffer.toString('base64');
         const imageFormat = `data:${foto1.mimetype};base64,${base64Image}`;
 
-        // PERBAIKAN: Bungkus payload menjadi JSON murni
+        // PERBAIKAN 2: Format paket yang 100% diminta oleh Magnific Upscaler
         const payload = {
+            image: imageFormat,
             prompt: promptUtama,
-            image: imageFormat
+            creativity: 8, // Nilai 1-10. Angka 8 membebaskan AI merombak foto jam tangan jadi ada wanita modelnya
+            scale_factor: "2x" // Parameter wajib untuk pintu ini
         };
 
         const response = await axios.post(MAGNIFIC_URL, payload, {
@@ -38,27 +40,20 @@ app.post('/generate', upload.single('foto1'), async (req, res) => {
             }
         });
 
-        // Tangkap respon dari Magnific
         const data = response.data;
-        const taskId = data.task_id || (data.data && data.data[0].task_id);
+        const taskId = data.task_id || (data.data && data.data[0].task_id) || data.id;
 
-        // Jika Magnific API langsung memberikan hasil gambar (tanpa antre)
-        if (!taskId && data.data && data.data[0].url) {
-            return res.json({ status: "COMPLETED", image_url: data.data[0].url });
-        } else if (!taskId && data.data && data.data[0].base64) {
-            return res.json({ status: "COMPLETED", image_url: `data:image/jpeg;base64,${data.data[0].base64}` });
-        }
-
-        res.json({ status: "PENDING", data: { task1: taskId || 'unknown' } });
+        res.json({ status: "PENDING", data: { task1: taskId } });
 
     } catch (error) {
-        console.error(error.response?.data || error.message);
-        const errorMsg = error.response?.data?.message || error.response?.data || error.message;
+        console.error("Error dari Magnific:", error.response?.data || error.message);
+        // Menampilkan pesan error asli dari Magnific agar kita tahu persis letak salahnya
+        const errorMsg = JSON.stringify(error.response?.data?.detail || error.response?.data || error.message);
         res.status(500).json({ status: "Error", pesan: errorMsg });
     }
 });
 
-// ROUTE 2: CEK STATUS (Jika masuk antrean)
+// ROUTE 2: CEK STATUS
 app.get('/status', async (req, res) => {
     try {
         const { taskId } = req.query;
