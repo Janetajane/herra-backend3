@@ -32,7 +32,6 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
 
         const referenceImages = [];
 
-        // SESUAI DOKUMENTASI: Kita pastikan mime_type ikut terkirim!
         if (req.files['foto1']) {
             const f = req.files['foto1'][0];
             const url = await uploadKeFreeImage(f.buffer);
@@ -49,7 +48,6 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
             referenceImages.push({ image: url, text: "Reference 3", mime_type: f.mimetype || "image/jpeg" });
         }
 
-        // FORMAT PAYLOAD 100% IDENTIK DENGAN CURL MAGNIFIC
         const payload = {
             prompt: promptUtama,
             webhook_url: "https://google.com", 
@@ -62,8 +60,10 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
             headers: { 'Content-Type': 'application/json', 'x-magnific-api-key': API_KEY }
         });
 
-        // Tangkap task_id secara normal
-        const data = response.data.data || response.data;
+        // AMAN 1: Buka Array kalau ada di respons Generate
+        let data = response.data.data || response.data;
+        if (Array.isArray(data)) data = data[0];
+
         res.json({ status: "PENDING", data: { task1: data.task_id || data.id } });
 
     } catch (error) {
@@ -84,7 +84,13 @@ app.get('/status', async (req, res) => {
             response = await axios.get(`https://api.magnific.com/v1/ai/tasks/${taskId}`, { headers: { 'x-magnific-api-key': API_KEY } });
         }
 
-        const data = response.data.data || response.data;
+        let data = response.data.data || response.data;
+        
+        // ==================================================
+        // AMAN 2: Buka Array yang bikin nyangkut di pengecekan status!
+        // ==================================================
+        if (Array.isArray(data)) data = data[0]; 
+
         let statusData = data.status || data.state;
         
         if (!statusData) statusData = "RAW: " + JSON.stringify(response.data).substring(0, 50);
