@@ -35,7 +35,6 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
             headers: { 'Content-Type': 'application/json', 'x-magnific-api-key': API_KEY }
         });
 
-        // PERBAIKAN: Buka kurung siku dari Magnific
         let responseData = response.data.data || response.data;
         if (Array.isArray(responseData)) responseData = responseData[0];
 
@@ -59,31 +58,29 @@ app.get('/status', async (req, res) => {
             response = await axios.get(`https://api.magnific.com/v1/ai/tasks/${taskId}`, { headers: { 'x-magnific-api-key': API_KEY } });
         }
 
-        // PERBAIKAN UTAMA: Mengekstrak Array [...] dari Magnific
         let data = response.data.data || response.data;
-        if (Array.isArray(data)) {
-            data = data[0]; // Membuka "kardus" dan mengambil data di dalamnya
-        }
+        if (Array.isArray(data)) data = data[0];
 
         let statusData = data.status || data.state;
-        
-        if (!statusData) {
-            statusData = "RAW: " + JSON.stringify(response.data).substring(0, 50);
-        }
+        if (!statusData) statusData = "RAW: " + JSON.stringify(response.data).substring(0, 50);
         
         let imageUrl = null;
         if (statusData === 'COMPLETED' || statusData === 'SUCCESS') {
+            // PERBAIKAN: Sapu bersih semua laci tempat Magnific mungkin menyembunyikan gambar
             if (data.generated && data.generated.length > 0) {
-                imageUrl = data.generated[0].image || data.generated[0].url || data.generated[0];
-                if (typeof imageUrl === 'string' && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
-                    imageUrl = `data:image/jpeg;base64,${imageUrl}`;
-                }
-            } else if (data.image_url) {
-                imageUrl = data.image_url;
+                imageUrl = data.generated[0].image || data.generated[0].url || data.generated[0].base64 || data.generated[0];
+            } else {
+                // Cari di luar array generated
+                imageUrl = data.image_url || data.url || data.output || data.result || data.image || data.base64;
+            }
+
+            if (imageUrl && typeof imageUrl === 'string' && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
+                imageUrl = `data:image/jpeg;base64,${imageUrl}`;
             }
         }
 
-        res.json({ status: statusData, image_url: imageUrl });
+        // PERBAIKAN: Kirim 'raw_data' ke HP Abang biar kita bisa baca isinya kalau gambarnya masih ngumpet
+        res.json({ status: statusData, image_url: imageUrl, raw_data: data });
     } catch (error) { 
         const errorMsg = error.response?.data?.message || error.response?.data || error.message;
         res.status(500).json({ status: "Error", pesan: JSON.stringify(errorMsg) }); 
