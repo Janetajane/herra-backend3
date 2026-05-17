@@ -11,11 +11,7 @@ app.use(cors());
 app.use(express.json());
 
 const MAGNIFIC_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
-
-// INI ALAMAT RAILWAY ABANG (Sebagai Webhook Asli)
 const RAILWAY_URL = 'https://herra-backend3-production.up.railway.app'; 
-
-// DATABASE LOKAL SEMENTARA: Untuk menampung kiriman gambar dari Magnific
 const databaseHasil = {};
 
 async function uploadKeFreeImage(buffer) {
@@ -53,18 +49,17 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
 
         const payload = {
             prompt: promptUtama,
-            // PERUBAHAN JENIUS: Kita suruh Magnific ngirim hasilnya balik ke Railway kita!
             webhook_url: `${RAILWAY_URL}/webhook`, 
             reference_images: referenceImages,
             aspect_ratio: ratio || "1:1",
             resolution: quality || "2K"
         };
 
+        // PERBAIKAN: Copot penyamaran, kita tampil jujur sebagai API Client murni!
         const response = await axios.post(MAGNIFIC_URL, payload, {
             headers: { 
                 'Content-Type': 'application/json', 
-                'x-magnific-api-key': API_KEY,
-                'User-Agent': 'Mozilla/5.0'
+                'x-magnific-api-key': API_KEY
             }
         });
 
@@ -72,8 +67,6 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
         if (Array.isArray(data)) data = data[0];
         
         const taskId = data.task_id || data.id;
-        
-        // Bikin slot kosong di database lokal untuk nunggu kiriman Magnific
         databaseHasil[taskId] = { status: "PENDING" };
 
         res.json({ status: "PENDING", data: { task1: taskId } });
@@ -84,9 +77,6 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
     }
 });
 
-// ==========================================
-// LOKET BARU: KHUSUS MENERIMA PAKET GAMBAR DARI MAGNIFIC
-// ==========================================
 app.post('/webhook', (req, res) => {
     try {
         let data = req.body.data || req.body;
@@ -94,7 +84,6 @@ app.post('/webhook', (req, res) => {
         
         const taskId = data.task_id || data.id;
         if (taskId) {
-            // HORE! Magnific ngirim gambarnya kesini, kita simpan!
             databaseHasil[taskId] = data; 
         }
         res.status(200).send("OK");
@@ -103,19 +92,14 @@ app.post('/webhook', (req, res) => {
     }
 });
 
-// ==========================================
-// Pengecekan Status via Database Lokal Railway
-// ==========================================
 app.get('/status', async (req, res) => {
     try {
         const { taskId, apiKey } = req.query;
-        
-        // Kita cek di gudang kita dulu, udah ada kiriman dari Magnific belum?
         let data = databaseHasil[taskId];
 
-        // Kalau di gudang masih kosong/pending, kita tanya Magnific langsung buat jaga-jaga
         if (!data || data.status === "PENDING" || (data.status === "COMPLETED" && !data.image_url && !data.generated)) {
              const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
+             // PERBAIKAN: Copot penyamaran di pengecekan status juga
              let response;
              try {
                  response = await axios.get(`${MAGNIFIC_URL}?task_id=${taskId}`, { headers: {'x-magnific-api-key': API_KEY} });
@@ -139,7 +123,6 @@ app.get('/status', async (req, res) => {
             }
         }
         
-        // Kalau status Selesai tapi gambar masih belum nyampe di Webhook, ubah teksnya biar web Abang gak error
         if (statusData === 'COMPLETED' && !imageUrl) {
             statusData = "MENUNGGU KIRIMAN WEBHOOK...";
         }
