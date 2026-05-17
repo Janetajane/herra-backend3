@@ -12,6 +12,12 @@ app.use(express.json());
 
 const MAGNIFIC_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
 
+// INI ALAMAT RAILWAY ABANG (Sebagai Webhook Asli)
+const RAILWAY_URL = 'https://herra-backend3-production.up.railway.app'; 
+
+// DATABASE LOKAL SEMENTARA: Untuk menampung kiriman gambar dari Magnific
+const databaseHasil = {};
+
 async function uploadKeFreeImage(buffer) {
     const form = new FormData();
     form.append('key', '6d207e02198a847aa98d0a2a901485a5');
@@ -47,8 +53,8 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
 
         const payload = {
             prompt: promptUtama,
-            // PERBAIKAN: Gunakan Webhook standar dokumentasi agar tidak dicurigai
-            webhook_url: "https://www.example.com/webhook", 
+            // PERUBAHAN JENIUS: Kita suruh Magnific ngirim hasilnya balik ke Railway kita!
+            webhook_url: `${RAILWAY_URL}/webhook`, 
             reference_images: referenceImages,
             aspect_ratio: ratio || "1:1",
             resolution: quality || "2K"
@@ -58,15 +64,19 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
             headers: { 
                 'Content-Type': 'application/json', 
                 'x-magnific-api-key': API_KEY,
-                // PERBAIKAN: Menyamar sebagai browser Chrome agar lolos Firewall
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0'
             }
         });
 
         let data = response.data.data || response.data;
         if (Array.isArray(data)) data = data[0];
+        
+        const taskId = data.task_id || data.id;
+        
+        // Bikin slot kosong di database lokal untuk nunggu kiriman Magnific
+        databaseHasil[taskId] = { status: "PENDING" };
 
-        res.json({ status: "PENDING", data: { task1: data.task_id || data.id } });
+        res.json({ status: "PENDING", data: { task1: taskId } });
 
     } catch (error) {
         const errorMsg = error.response?.data?.message || error.response?.data || error.message;
@@ -74,36 +84,64 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
     }
 });
 
+// ==========================================
+// LOKET BARU: KHUSUS MENERIMA PAKET GAMBAR DARI MAGNIFIC
+// ==========================================
+app.post('/webhook', (req, res) => {
+    try {
+        let data = req.body.data || req.body;
+        if (Array.isArray(data)) data = data[0];
+        
+        const taskId = data.task_id || data.id;
+        if (taskId) {
+            // HORE! Magnific ngirim gambarnya kesini, kita simpan!
+            databaseHasil[taskId] = data; 
+        }
+        res.status(200).send("OK");
+    } catch(err) {
+        res.status(500).send("Error");
+    }
+});
+
+// ==========================================
+// Pengecekan Status via Database Lokal Railway
+// ==========================================
 app.get('/status', async (req, res) => {
     try {
         const { taskId, apiKey } = req.query;
-        const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY; 
         
-        const headers = { 
-            'x-magnific-api-key': API_KEY,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-        };
+        // Kita cek di gudang kita dulu, udah ada kiriman dari Magnific belum?
+        let data = databaseHasil[taskId];
 
-        let response;
-        try {
-            response = await axios.get(`${MAGNIFIC_URL}?task_id=${taskId}`, { headers });
-        } catch(err) {
-            response = await axios.get(`https://api.magnific.com/v1/ai/tasks/${taskId}`, { headers });
+        // Kalau di gudang masih kosong/pending, kita tanya Magnific langsung buat jaga-jaga
+        if (!data || data.status === "PENDING" || (data.status === "COMPLETED" && !data.image_url && !data.generated)) {
+             const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
+             let response;
+             try {
+                 response = await axios.get(`${MAGNIFIC_URL}?task_id=${taskId}`, { headers: {'x-magnific-api-key': API_KEY} });
+             } catch(err) {
+                 response = await axios.get(`https://api.magnific.com/v1/ai/tasks/${taskId}`, { headers: {'x-magnific-api-key': API_KEY} });
+             }
+             let magData = response.data.data || response.data;
+             if (Array.isArray(magData)) magData = magData[0];
+             
+             if(magData) data = magData; 
         }
 
-        let data = response.data.data || response.data;
-        if (Array.isArray(data)) data = data[0]; 
-
-        let statusData = data.status || data.state;
-        if (!statusData) statusData = "RAW: " + JSON.stringify(response.data).substring(0, 50);
-        
+        let statusData = data?.status || data?.state || "PENDING";
         let imageUrl = null;
+        
         if (statusData === 'COMPLETED' || statusData === 'SUCCESS') {
             if (data.generated && data.generated.length > 0) {
                 imageUrl = data.generated[0].image || data.generated[0].url;
             } else if (data.image_url) {
                 imageUrl = data.image_url;
             }
+        }
+        
+        // Kalau status Selesai tapi gambar masih belum nyampe di Webhook, ubah teksnya biar web Abang gak error
+        if (statusData === 'COMPLETED' && !imageUrl) {
+            statusData = "MENUNGGU KIRIMAN WEBHOOK...";
         }
 
         res.json({ status: statusData, image_url: imageUrl, raw_data: data });
@@ -115,4 +153,3 @@ app.get('/status', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server nyala di port ${PORT}`));
-            
