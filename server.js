@@ -35,8 +35,11 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
             headers: { 'Content-Type': 'application/json', 'x-magnific-api-key': API_KEY }
         });
 
-        const data = response.data.data || response.data;
-        res.json({ status: "PENDING", data: { task1: data.task_id || data.id } });
+        // PERBAIKAN: Buka kurung siku dari Magnific
+        let responseData = response.data.data || response.data;
+        if (Array.isArray(responseData)) responseData = responseData[0];
+
+        res.json({ status: "PENDING", data: { task1: responseData.task_id || responseData.id } });
 
     } catch (error) {
         const errorMsg = error.response?.data?.message || error.response?.data || error.message;
@@ -51,20 +54,19 @@ app.get('/status', async (req, res) => {
         
         let response;
         try {
-            // Coba jalur utama Magnific
             response = await axios.get(`${MAGNIFIC_URL}?task_id=${taskId}`, { headers: { 'x-magnific-api-key': API_KEY } });
         } catch(err) {
-            // Jika jalur utama ditolak (405/404), coba jalur alternatif khusus Task
             response = await axios.get(`https://api.magnific.com/v1/ai/tasks/${taskId}`, { headers: { 'x-magnific-api-key': API_KEY } });
         }
 
-        const data = response.data.data || response.data;
+        // PERBAIKAN UTAMA: Mengekstrak Array [...] dari Magnific
+        let data = response.data.data || response.data;
+        if (Array.isArray(data)) {
+            data = data[0]; // Membuka "kardus" dan mengambil data di dalamnya
+        }
+
         let statusData = data.status || data.state;
         
-        // ==========================================
-        // ALAT PENYADAP AKTIF: Jika status disembunyikan Magnific, 
-        // kita paksa tampilkan 50 huruf pertama dari jawaban aslinya!
-        // ==========================================
         if (!statusData) {
             statusData = "RAW: " + JSON.stringify(response.data).substring(0, 50);
         }
