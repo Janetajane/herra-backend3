@@ -9,16 +9,12 @@ const upload = multer();
 
 app.use(cors());
 app.use(express.json());
-// PERBAIKAN: Jaring Ekstra Lebar untuk menangkap format data aneh dari Magnific
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text());
 
 const MAGNIFIC_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
 const RAILWAY_URL = 'https://herra-backend3-production.up.railway.app'; 
 const databaseHasil = {};
-
-// Variabel penyadap untuk melihat paket terakhir yang mendarat di Railway
-let webhookTerakhir = "Belum ada paket Webhook yang ngetuk pintu.";
 
 async function uploadKeFreeImage(buffer) {
     const form = new FormData();
@@ -81,11 +77,7 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
 
 app.post('/webhook', (req, res) => {
     try {
-        // Tangkap mentah-mentah apa pun yang masuk dan simpan di memori
-        webhookTerakhir = req.body;
-
         let data = req.body.data || req.body;
-        // Kalau formatnya text, coba ubah ke JSON
         if (typeof data === 'string') {
             try { data = JSON.parse(data); } catch(e) {}
         }
@@ -124,21 +116,16 @@ app.get('/status', async (req, res) => {
         let imageUrl = null;
         
         if (statusData === 'COMPLETED' || statusData === 'SUCCESS') {
+            // PERBAIKAN FINAL: Eksekusi link gambar sesuai struktur aslinya!
             if (data.generated && data.generated.length > 0) {
-                imageUrl = data.generated[0].image || data.generated[0].url;
+                if (typeof data.generated[0] === 'string') {
+                    imageUrl = data.generated[0]; // Ambil langsung kalau cuma teks
+                } else {
+                    imageUrl = data.generated[0].image || data.generated[0].url;
+                }
             } else if (data.image_url) {
                 imageUrl = data.image_url;
             }
-        }
-        
-        // PERBAIKAN: Jangan ubah nama statusData agar UI di HP Abang bisa memunculkan Terminal Hijau!
-        if (statusData === 'COMPLETED' && !imageUrl) {
-            // Kita jejalkan data log jaring kita biar tampil di Terminal Hijau
-            data = {
-                catatan_sistem: "Status Selesai tapi gambar tidak ada di jalur normal. Ini hasil tangkapan Jaring Webhook:",
-                tangkapan_webhook_terakhir: webhookTerakhir,
-                data_database_lokal: databaseHasil[taskId] || "Kosong"
-            };
         }
 
         res.json({ status: statusData, image_url: imageUrl, raw_data: data });
