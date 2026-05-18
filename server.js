@@ -5,7 +5,7 @@ const axios = require('axios');
 const FormData = require('form-data'); 
 const sharp = require('sharp'); 
 
-const app = report = express();
+const app = express();
 const upload = multer();
 
 app.use(cors());
@@ -16,7 +16,7 @@ app.use(express.text());
 const RAILWAY_URL = 'https://herra-backend3-production.up.railway.app'; 
 const databaseHasil = {};
 
-// Kurir Pembantu 1: Base64 murni untuk Super Upscaler & Flux 2 Pro
+// Kurir Pembantu 1: Base64 murni steril untuk Super Upscaler & Flux 2 Pro
 async function konversiKeBase64Steril(buffer) {
     return await sharp(buffer)
         .toFormat('jpeg')
@@ -25,7 +25,7 @@ async function konversiKeBase64Steril(buffer) {
         .then(buf => buf.toString('base64'));
 }
 
-// Kurir Pembantu 2: Upload FreeImage (URL) untuk Gemini 2.5 Flash Image
+// Kurir Pembantu 2: Upload FreeImage (URL) untuk Gemini 2.5 Flash & Nano Banana Pro
 async function uploadKeFreeImage(buffer) {
     const bufferBersih = await sharp(buffer).toFormat('jpeg').jpeg({ quality: 95 }).toBuffer();
     const form = new FormData();
@@ -46,7 +46,7 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
         const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
 
         if (!API_KEY) return res.status(500).json({ status: "Error", pesan: "API Key belum diisi!" });
-        if (!req.files || !req.files['foto1']) return res.status(400).json({ status: "Error", pesan: "Berkas gambar utama (Foto 1) wajib diunggah." });
+        if (!req.files || !req.files['foto1']) return res.status(400).json({ status: "Error", pesan: "Berkas gambar utama wajib diunggah." });
 
         let TARGET_URL = '';
         let payload = {};
@@ -95,9 +95,36 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
                 payload.height = 1024; 
             }
 
+        } else if (fitur === 'ugc') {
+            // =========================================================
+            // LOKET 3: NANO BANANA PRO (KITA KEMBALIKAN AMAN) ✨
+            // =========================================================
+            TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
+            
+            const mainImageUrl = await uploadKeFreeImage(req.files['foto1'][0].buffer);
+            const referenceImages = [];
+            referenceImages.push({ image: mainImageUrl, text: "Reference 1", mime_type: "image/jpeg" });
+
+            if (req.files['foto2']) {
+                const url2 = await uploadKeFreeImage(req.files['foto2'][0].buffer);
+                referenceImages.push({ image: url2, text: "Reference 2", mime_type: "image/jpeg" });
+            }
+            if (req.files['foto3']) {
+                const url3 = await uploadKeFreeImage(req.files['foto3'][0].buffer);
+                referenceImages.push({ image: url3, text: "Reference 3", mime_type: "image/jpeg" });
+            }
+
+            payload = {
+                prompt: promptUtama,
+                webhook_url: `${RAILWAY_URL}/webhook`, 
+                reference_images: referenceImages,
+                aspect_ratio: ratio || "1:1",
+                resolution: quality || "2K"
+            };
+
         } else {
             // =========================================================
-            // LOKET 3: GEMINI 2.5 FLASH IMAGE PREVIEW (STRUKTUR URL ARRAY) 🔥
+            // LOKET 4: GEMINI 2.5 FLASH IMAGE PREVIEW (STRUKTUR URL ARRAY) 🤖
             // =========================================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/gemini-2-5-flash-image-preview';
             
@@ -115,7 +142,7 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
 
             payload = {
                 prompt: promptUtama,
-                reference_images: arrayGambarGemini, // Sesuai Dokumen: Mendukung array string campuran URLpublik
+                reference_images: arrayGambarGemini, 
                 webhook_url: `${RAILWAY_URL}/webhook`
             };
         }
@@ -169,8 +196,9 @@ app.get('/status', async (req, res) => {
                  CHECK_URL = `https://api.magnific.com/v1/ai/image-upscaler/${taskId}`;
              } else if (data?.used_fitur === 'flux') {
                  CHECK_URL = `https://api.magnific.com/v1/ai/text-to-image/flux-2-pro/${taskId}`;
+             } else if (data?.used_fitur === 'ugc') {
+                 CHECK_URL = `https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro?task_id=${taskId}`;
              } else {
-                 // FIX GERBANG GET: Path Parameter sesuai gambar Screenshot_20260518-233115.jpg milik Gemini
                  CHECK_URL = `https://api.magnific.com/v1/ai/gemini-2-5-flash-image-preview/${taskId}`;
              }
 
@@ -187,7 +215,7 @@ app.get('/status', async (req, res) => {
         if (statusData === 'COMPLETED' || statusData === 'SUCCESS') {
             if (data.generated && data.generated.length > 0) {
                 if (typeof data.generated[0] === 'string') {
-                    imageUrl = data.generated[0]; // Sukses memanen hasil array string dari model Gemini & Flux
+                    imageUrl = data.generated[0];
                 } else {
                     imageUrl = data.generated[0].image || data.generated[0].url;
                 }
@@ -205,4 +233,4 @@ app.get('/status', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server HERRA AI aktif gagah di port ${PORT}`));
-           
+                
