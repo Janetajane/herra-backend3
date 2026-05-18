@@ -12,10 +12,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text());
 
-const MAGNIFIC_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
 const RAILWAY_URL = 'https://herra-backend3-production.up.railway.app'; 
 const databaseHasil = {};
 
+// Fungsi kurir FreeImage khusus untuk loket UGC Generator
 async function uploadKeFreeImage(buffer) {
     const form = new FormData();
     form.append('key', '6d207e02198a847aa98d0a2a901485a5');
@@ -28,36 +28,60 @@ async function uploadKeFreeImage(buffer) {
 
 app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { name: 'foto3' }]), async (req, res) => {
     try {
-        const { promptUtama, ratio, quality, apiKey } = req.body;
+        const { promptUtama, ratio, quality, apiKey, fitur } = req.body;
         const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
 
         if (!API_KEY) return res.status(500).json({ status: "Error", pesan: "API Key belum diisi!" });
-        if (!req.files || !req.files['foto1']) return res.status(400).json({ status: "Error", pesan: "Foto utama wajib diunggah." });
+        if (!req.files || !req.files['foto1']) return res.status(400).json({ status: "Error", pesan: "Berkas gambar utama wajib diunggah." });
 
-        const referenceImages = [];
+        let TARGET_URL = '';
+        let payload = {};
 
-        if (req.files['foto1']) {
-            const url = await uploadKeFreeImage(req.files['foto1'][0].buffer);
-            referenceImages.push({ image: url, text: "Reference 1", mime_type: req.files['foto1'][0].mimetype || "image/jpeg" });
+        if (fitur === 'upscale') {
+            // ==========================================
+            // LOKET 1: SESUAI CURL DOKUMENTASI UPSCALER RESMI
+            // ==========================================
+            TARGET_URL = 'https://api.magnific.com/v1/ai/image-upscaler';
+            
+            // Format wajib: Base64 bersih tanpa header data:image/...
+            const base64Bersih = req.files['foto1'][0].buffer.toString('base64');
+
+            payload = {
+                image: base64Bersih,
+                webhook_url: `${RAILWAY_URL}/webhook`,
+                scale_factor: quality === '4K' ? "4x" : "2x", // Sesuai dokumentasi: pakai huruf 'x'
+                optimized_for: "standard",
+                engine: "magnific_sparkle" // Engine bawaan dari dokumentasi resmi
+            };
+        } else {
+            // ==========================================
+            // LOKET 2: JALUR UGC NANO BANANA PRO (Ganti Baju)
+            // ==========================================
+            TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
+            
+            const mainImageUrl = await uploadKeFreeImage(req.files['foto1'][0].buffer);
+            const referenceImages = [];
+            referenceImages.push({ image: mainImageUrl, text: "Reference 1", mime_type: req.files['foto1'][0].mimetype || "image/jpeg" });
+
+            if (req.files['foto2']) {
+                const url = await uploadKeFreeImage(req.files['foto2'][0].buffer);
+                referenceImages.push({ image: url, text: "Reference 2", mime_type: req.files['foto2'][0].mimetype || "image/jpeg" });
+            }
+            if (req.files['foto3']) {
+                const url = await uploadKeFreeImage(req.files['foto3'][0].buffer);
+                referenceImages.push({ image: url, text: "Reference 3", mime_type: req.files['foto3'][0].mimetype || "image/jpeg" });
+            }
+
+            payload = {
+                prompt: promptUtama,
+                webhook_url: `${RAILWAY_URL}/webhook`, 
+                reference_images: referenceImages,
+                aspect_ratio: ratio || "1:1",
+                resolution: quality || "2K"
+            };
         }
-        if (req.files['foto2']) {
-            const url = await uploadKeFreeImage(req.files['foto2'][0].buffer);
-            referenceImages.push({ image: url, text: "Reference 2", mime_type: req.files['foto2'][0].mimetype || "image/jpeg" });
-        }
-        if (req.files['foto3']) {
-            const url = await uploadKeFreeImage(req.files['foto3'][0].buffer);
-            referenceImages.push({ image: url, text: "Reference 3", mime_type: req.files['foto3'][0].mimetype || "image/jpeg" });
-        }
 
-        const payload = {
-            prompt: promptUtama,
-            webhook_url: `${RAILWAY_URL}/webhook`, 
-            reference_images: referenceImages,
-            aspect_ratio: ratio || "1:1",
-            resolution: quality || "2K"
-        };
-
-        const response = await axios.post(MAGNIFIC_URL, payload, {
+        const response = await axios.post(TARGET_URL, payload, {
             headers: { 'Content-Type': 'application/json', 'x-magnific-api-key': API_KEY }
         });
 
@@ -65,7 +89,7 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
         if (Array.isArray(data)) data = data[0];
         
         const taskId = data.task_id || data.id;
-        databaseHasil[taskId] = { status: "PENDING" };
+        databaseHasil[taskId] = { status: "PENDING", used_fitur: fitur };
 
         res.json({ status: "PENDING", data: { task1: taskId } });
 
@@ -85,7 +109,7 @@ app.post('/webhook', (req, res) => {
         
         const taskId = data.task_id || data.id;
         if (taskId) {
-            databaseHasil[taskId] = data; 
+            databaseHasil[taskId] = { ...databaseHasil[taskId], ...data }; 
         }
         res.status(200).send("OK");
     } catch(err) {
@@ -98,28 +122,34 @@ app.get('/status', async (req, res) => {
         const { taskId, apiKey } = req.query;
         let data = databaseHasil[taskId];
 
+        // Jika data di gudang lokal kita belum lengkap, kita jemput paksa ke Magnific
         if (!data || data.status === "PENDING" || (data.status === "COMPLETED" && !data.image_url && !data.generated)) {
              const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
-             let response;
-             try {
-                 response = await axios.get(`${MAGNIFIC_URL}?task_id=${taskId}`, { headers: {'x-magnific-api-key': API_KEY} });
-             } catch(err) {
-                 response = await axios.get(`https://api.magnific.com/v1/ai/tasks/${taskId}`, { headers: {'x-magnific-api-key': API_KEY} });
-             }
-             let magData = response.data.data || response.data;
-             if (Array.isArray(magData)) magData = magData[0];
              
-             if(magData) data = magData; 
+             // Atur URL pengecekan status berdasarkan jenis fiturnya
+             const CHECK_URL = data?.used_fitur === 'upscale' 
+                ? 'https://api.magnific.com/v1/ai/image-upscaler' 
+                : `https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro?task_id=${taskId}`;
+
+             let response = await axios.get(CHECK_URL, { headers: {'x-magnific-api-key': API_KEY} });
+             let magData = response.data.data || response.data;
+             
+             // Sesuai dokumentasi GET Upscaler: cari task kita di dalam tumpukan daftar array
+             if (Array.isArray(magData)) {
+                 const tumpukanTask = magData.find(item => item.task_id === taskId);
+                 if (tumpukanTask) magData = tumpukanTask;
+             }
+
+             if(magData) data = { ...data, ...magData }; 
         }
 
         let statusData = data?.status || data?.state || "PENDING";
         let imageUrl = null;
         
         if (statusData === 'COMPLETED' || statusData === 'SUCCESS') {
-            // PERBAIKAN FINAL: Eksekusi link gambar sesuai struktur aslinya!
             if (data.generated && data.generated.length > 0) {
                 if (typeof data.generated[0] === 'string') {
-                    imageUrl = data.generated[0]; // Ambil langsung kalau cuma teks
+                    imageUrl = data.generated[0];
                 } else {
                     imageUrl = data.generated[0].image || data.generated[0].url;
                 }
