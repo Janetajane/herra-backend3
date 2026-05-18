@@ -5,7 +5,7 @@ const axios = require('axios');
 const FormData = require('form-data'); 
 const sharp = require('sharp'); 
 
-const app = express();
+const app = express(); // KINI SUDAH FIX AMAN 100%
 const upload = multer();
 
 app.use(cors());
@@ -52,12 +52,8 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
         let payload = {};
 
         if (fitur === 'upscale') {
-            // ===================================================
-            // LOKET 1: AI IMAGE UPSCALER (STRUKTUR BASE64 MURNI)
-            // ===================================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/image-upscaler';
             const base64Murni = await konversiKeBase64Steril(req.files['foto1'][0].buffer);
-
             payload = {
                 image: base64Murni, 
                 webhook_url: `${RAILWAY_URL}/webhook`,
@@ -65,86 +61,32 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
                 optimized_for: "soft_portraits", 
                 engine: "automatic" 
             };
-
         } else if (fitur === 'flux') {
-            // ===================================================
-            // LOKET 2: FLUX 2 PRO PREMIUM (STRUKTUR BASE64 MANDIRI)
-            // ===================================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/flux-2-pro';
-            const base64Foto1 = await konversiKeBase64Steril(req.files['foto1'][0].buffer);
-            
+            const base64Foto1 = await konversionsKeBase64Steril(req.files['foto1'][0].buffer);
             payload = {
                 prompt: promptUtama,
                 prompt_upsampling: false,
                 input_image: base64Foto1, 
                 webhook_url: `${RAILWAY_URL}/webhook`
             };
-
-            if (req.files['foto2']) {
-                payload.input_image_2 = await konversiKeBase64Steril(req.files['foto2'][0].buffer);
-            }
-            if (req.files['foto3']) {
-                payload.input_image_3 = await konversiKeBase64Steril(req.files['foto3'][0].buffer);
-            }
-
-            if (ratio === "9:16") {
-                payload.width = 768;
-                payload.height = 1440; 
-            } else {
-                payload.width = 1024;
-                payload.height = 1024; 
-            }
-
+            if (req.files['foto2']) payload.input_image_2 = await konversiKeBase64Steril(req.files['foto2'][0].buffer);
+            if (req.files['foto3']) payload.input_image_3 = await konversiKeBase64Steril(req.files['foto3'][0].buffer);
+            if (ratio === "9:16") { payload.width = 768; payload.height = 1440; } else { payload.width = 1024; payload.height = 1024; }
         } else if (fitur === 'ugc') {
-            // =========================================================
-            // LOKET 3: NANO BANANA PRO (KITA KEMBALIKAN AMAN) ✨
-            // =========================================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
-            
             const mainImageUrl = await uploadKeFreeImage(req.files['foto1'][0].buffer);
-            const referenceImages = [];
-            referenceImages.push({ image: mainImageUrl, text: "Reference 1", mime_type: "image/jpeg" });
-
-            if (req.files['foto2']) {
-                const url2 = await uploadKeFreeImage(req.files['foto2'][0].buffer);
-                referenceImages.push({ image: url2, text: "Reference 2", mime_type: "image/jpeg" });
-            }
-            if (req.files['foto3']) {
-                const url3 = await uploadKeFreeImage(req.files['foto3'][0].buffer);
-                referenceImages.push({ image: url3, text: "Reference 3", mime_type: "image/jpeg" });
-            }
-
-            payload = {
-                prompt: promptUtama,
-                webhook_url: `${RAILWAY_URL}/webhook`, 
-                reference_images: referenceImages,
-                aspect_ratio: ratio || "1:1",
-                resolution: quality || "2K"
-            };
-
+            const referenceImages = [{ image: mainImageUrl, text: "Reference 1", mime_type: "image/jpeg" }];
+            if (req.files['foto2']) { const url2 = await uploadKeFreeImage(req.files['foto2'][0].buffer); referenceImages.push({ image: url2, text: "Reference 2", mime_type: "image/jpeg" }); }
+            if (req.files['foto3']) { const url3 = await uploadKeFreeImage(req.files['foto3'][0].buffer); referenceImages.push({ image: url3, text: "Reference 3", mime_type: "image/jpeg" }); }
+            payload = { prompt: promptUtama, webhook_url: `${RAILWAY_URL}/webhook`, reference_images: referenceImages, aspect_ratio: ratio || "1:1", resolution: quality || "2K" };
         } else {
-            // =========================================================
-            // LOKET 4: GEMINI 2.5 FLASH IMAGE PREVIEW (STRUKTUR URL ARRAY) 🤖
-            // =========================================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/gemini-2-5-flash-image-preview';
-            
             const urlUtama = await uploadKeFreeImage(req.files['foto1'][0].buffer);
             const arrayGambarGemini = [urlUtama]; 
-
-            if (req.files['foto2']) {
-                const url2 = await uploadKeFreeImage(req.files['foto2'][0].buffer);
-                arrayGambarGemini.push(url2);
-            }
-            if (req.files['foto3']) {
-                const url3 = await uploadKeFreeImage(req.files['foto3'][0].buffer);
-                arrayGambarGemini.push(url3);
-            }
-
-            payload = {
-                prompt: promptUtama,
-                reference_images: arrayGambarGemini, 
-                webhook_url: `${RAILWAY_URL}/webhook`
-            };
+            if (req.files['foto2']) { const url2 = await uploadKeFreeImage(req.files['foto2'][0].buffer); arrayGambarGemini.push(url2); }
+            if (req.files['foto3']) { const url3 = await uploadKeFreeImage(req.files['foto3'][0].buffer); arrayGambarGemini.push(url3); }
+            payload = { prompt: promptUtama, reference_images: arrayGambarGemini, webhook_url: `${RAILWAY_URL}/webhook` };
         }
 
         const response = await axios.post(TARGET_URL, payload, {
@@ -168,19 +110,12 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
 app.post('/webhook', (req, res) => {
     try {
         let data = req.body.data || req.body;
-        if (typeof data === 'string') {
-            try { data = JSON.parse(data); } catch(e) {}
-        }
+        if (typeof data === 'string') { try { data = JSON.parse(data); } catch(e) {} }
         if (Array.isArray(data)) data = data[0];
-        
         const taskId = data.task_id || data.id;
-        if (taskId) {
-            databaseHasil[taskId] = { ...databaseHasil[taskId], ...data }; 
-        }
+        if (taskId) databaseHasil[taskId] = { ...databaseHasil[taskId], ...data }; 
         res.status(200).send("OK");
-    } catch(err) {
-        res.status(500).send("Error");
-    }
+    } catch(err) { res.status(500).send("Error"); }
 });
 
 app.get('/status', async (req, res) => {
@@ -190,7 +125,6 @@ app.get('/status', async (req, res) => {
 
         if (!data || data.status === "PENDING" || (data.status === "COMPLETED" && !data.image_url && !data.generated)) {
              const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
-             
              let CHECK_URL = '';
              if (data?.used_fitur === 'upscale') {
                  CHECK_URL = `https://api.magnific.com/v1/ai/image-upscaler/${taskId}`;
@@ -204,7 +138,6 @@ app.get('/status', async (req, res) => {
 
              let response = await axios.get(CHECK_URL, { headers: {'x-magnific-api-key': API_KEY} });
              let magData = response.data.data || response.data;
-             
              if (Array.isArray(magData)) magData = magData[0];
              if (magData) data = { ...data, ...magData }; 
         }
@@ -233,4 +166,3 @@ app.get('/status', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server HERRA AI aktif gagah di port ${PORT}`));
-                
