@@ -16,13 +16,17 @@ app.use(express.text());
 const RAILWAY_URL = 'https://herra-backend3-production.up.railway.app'; 
 const databaseHasil = {};
 
+// Kurir Utama: Mengubah file mentah dari HP menjadi URL JPEG murni yang stabil & ringan
 async function uploadKeFreeImage(buffer) {
+    // Foto dicuci dulu pakai sharp biar formatnya standar JPEG bersih
     const bufferBersih = await sharp(buffer).jpeg({ quality: 95 }).toBuffer();
+    
     const form = new FormData();
     form.append('key', '6d207e02198a847aa98d0a2a901485a5');
     form.append('action', 'upload');
     form.append('source', bufferBersih.toString('base64'));
     form.append('format', 'json');
+    
     const uploadRes = await axios.post('https://freeimage.host/api/1/upload', form, { headers: form.getHeaders() });
     return uploadRes.data.image.url;
 }
@@ -35,29 +39,31 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
         if (!API_KEY) return res.status(500).json({ status: "Error", pesan: "API Key belum diisi!" });
         if (!req.files || !req.files['foto1']) return res.status(400).json({ status: "Error", pesan: "Berkas gambar utama wajib diunggah." });
 
+        // Foto otomatis dicuci dan diubah jadi URL pendek oleh FreeImage
+        const mainImageUrl = await uploadKeFreeImage(req.files['foto1'][0].buffer);
+        
         let TARGET_URL = '';
         let payload = {};
 
         if (fitur === 'upscale') {
+            // ==========================================
+            // LOKET 1: JALUR UPSCALER (MENGGUNAKAN URL PENDEK - JAUH LEBIH AMAN)
+            // ==========================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/image-upscaler';
             
-            // Convert gambar ke teks Base64 bersih
-            const base64Murni = await sharp(req.files['foto1'][0].buffer)
-                .jpeg({ quality: 90 })
-                .toBuffer()
-                .then(buf => buf.toString('base64'));
-
             payload = {
-                image: base64Murni, 
+                image: mainImageUrl, // Kirim URL pendek, anti dicurigai spammer/cyber attack!
                 webhook_url: `${RAILWAY_URL}/webhook`,
                 scale_factor: quality === '4K' ? "4x" : "2x", 
                 optimized_for: "soft_portraits", 
                 engine: "magnific_sparkle" 
             };
         } else {
+            // ==========================================
+            // LOKET 2: JALUR UGC NANO BANANA PRO
+            // ==========================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
             
-            const mainImageUrl = await uploadKeFreeImage(req.files['foto1'][0].buffer);
             const referenceImages = [];
             referenceImages.push({ image: mainImageUrl, text: "Reference 1", mime_type: "image/jpeg" });
 
@@ -123,9 +129,9 @@ app.get('/status', async (req, res) => {
         if (!data || data.status === "PENDING" || (data.status === "COMPLETED" && !data.image_url && !data.generated)) {
              const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
              
-             // PERBAIKAN TOTAL DI SINI: Mengikuti struktur rute 'Get task' yang asli!
+             // Jalur pemanggilan status Get Task yang sudah disinkronkan kemarin
              const CHECK_URL = data?.used_fitur === 'upscale' 
-                ? `https://api.magnific.com/v1/ai/image-upscaler/${taskId}` // Tembak langsung ke ID task-nya!
+                ? `https://api.magnific.com/v1/ai/image-upscaler/${taskId}` 
                 : `https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro?task_id=${taskId}`;
 
              let response = await axios.get(CHECK_URL, { headers: {'x-magnific-api-key': API_KEY} });
@@ -159,4 +165,3 @@ app.get('/status', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server nyala di port ${PORT}`));
-    
