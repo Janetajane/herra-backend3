@@ -16,7 +16,6 @@ app.use(express.text());
 const RAILWAY_URL = 'https://herra-backend3-production.up.railway.app'; 
 const databaseHasil = {};
 
-// Kurir FreeImage tetap dipakai untuk loket UGC Generator
 async function uploadKeFreeImage(buffer) {
     const bufferBersih = await sharp(buffer).jpeg({ quality: 95 }).toBuffer();
     const form = new FormData();
@@ -40,32 +39,22 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
         let payload = {};
 
         if (fitur === 'upscale') {
-            // ==========================================
-            // LOKET 1: JALUR UPSCALER - IKUTI cURL 100% (BASE64 MURNI STABIL)
-            // ==========================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/image-upscaler';
             
-            // Konversi file dari HP Abang jadi JPEG, lalu ubah ke teks Base64 bersih tanpa embel-embel data:image/jpeg
-            const base64Murni= await sharp(req.files['foto1'][0].buffer)
+            // Convert gambar ke teks Base64 bersih
+            const base64Murni = await sharp(req.files['foto1'][0].buffer)
                 .jpeg({ quality: 90 })
                 .toBuffer()
                 .then(buf => buf.toString('base64'));
 
             payload = {
-                image: base64Murni, // Mengirim teks Base64 murni sesuai Kitab Suci cURL Magnific!
+                image: base64Murni, 
                 webhook_url: `${RAILWAY_URL}/webhook`,
                 scale_factor: quality === '4K' ? "4x" : "2x", 
                 optimized_for: "soft_portraits", 
-                creativity: 2,
-                hdr: 1,
-                resemblance: 0,
-                fractality: -1,
                 engine: "magnific_sparkle" 
             };
         } else {
-            // ==========================================
-            // LOKET 2: JALUR UGC NANO BANANA PRO
-            // ==========================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
             
             const mainImageUrl = await uploadKeFreeImage(req.files['foto1'][0].buffer);
@@ -134,19 +123,16 @@ app.get('/status', async (req, res) => {
         if (!data || data.status === "PENDING" || (data.status === "COMPLETED" && !data.image_url && !data.generated)) {
              const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
              
+             // PERBAIKAN TOTAL DI SINI: Mengikuti struktur rute 'Get task' yang asli!
              const CHECK_URL = data?.used_fitur === 'upscale' 
-                ? 'https://api.magnific.com/v1/ai/image-upscaler' 
+                ? `https://api.magnific.com/v1/ai/image-upscaler/${taskId}` // Tembak langsung ke ID task-nya!
                 : `https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro?task_id=${taskId}`;
 
              let response = await axios.get(CHECK_URL, { headers: {'x-magnific-api-key': API_KEY} });
              let magData = response.data.data || response.data;
              
-             if (Array.isArray(magData)) {
-                 const tumpukanTask = magData.find(item => item.task_id === taskId);
-                 if (tumpukanTask) magData = tumpukanTask;
-             }
-
-             if(magData) data = { ...data, ...magData }; 
+             if (Array.isArray(magData)) magData = magData[0];
+             if (magData) data = { ...data, ...magData }; 
         }
 
         let statusData = data?.status || data?.state || "PENDING";
@@ -173,3 +159,4 @@ app.get('/status', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server nyala di port ${PORT}`));
+    
