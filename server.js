@@ -41,29 +41,30 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
 
         if (fitur === 'upscale') {
             // ==========================================
-            // LOKET 1: FIX JALUR UPSCALER (TAAT ATURAN STRING<BYTE>)
+            // LOKET 1: FIX JALUR UPSCALER (PENGECILAN DIMENSI AMAN)
             // ==========================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/image-upscaler';
             
-            // Cuci gambar pakai sharp agar metadata hancur & steril
-            const base64Mentah = await sharp(req.files['foto1'][0].buffer)
-                .jpeg({ quality: 90 })
+            // Trik Sakti: Gunting ukuran gambar input agar total piksel akhir tidak melanggar batas 25.3 juta piksel
+            const base64Aman = await sharp(req.files['foto1'][0].buffer)
+                .resize({ width: 1080, withoutEnlargement: true }) // Paksa lebar ke 1080px (standar HD aman)
+                .jpeg({ quality: 85 })
                 .toBuffer()
                 .then(buf => buf.toString('base64'));
 
-            // KUNCI SUKSES: Wajib ditambahkan data:image/jpeg;base64, di depan teksnya agar terbaca sebagai string<byte>!
-            const formatStringByte = `data:image/jpeg;base64,${base64Mentah}`;
+            // Memasukkan format lengkap string<byte> sesuai kitab suci
+            const formatStringByte = `data:image/jpeg;base64,${base64Aman}`;
 
             payload = {
-                image: formatStringByte, // Kirim format lengkap string<byte> sesuai dokumentasi terbaru!
+                image: formatStringByte, 
                 webhook_url: `${RAILWAY_URL}/webhook`,
                 scale_factor: quality === '4K' ? "4x" : "2x", 
                 optimized_for: "soft_portraits", 
-                creativity: 0, // Mengikuti default dari gambar dokumentasi Abang
+                creativity: 0, 
                 hdr: 0,
                 resemblance: 0,
                 fractality: 0,
-                engine: "automatic" // Mengikuti default dokumen Abang biar aman
+                engine: "automatic" 
             };
         } else {
             // ==========================================
