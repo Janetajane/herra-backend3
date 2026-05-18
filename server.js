@@ -15,7 +15,6 @@ app.use(express.text());
 const RAILWAY_URL = 'https://herra-backend3-production.up.railway.app'; 
 const databaseHasil = {};
 
-// Fungsi kurir FreeImage khusus untuk loket UGC Generator
 async function uploadKeFreeImage(buffer) {
     const form = new FormData();
     form.append('key', '6d207e02198a847aa98d0a2a901485a5');
@@ -34,32 +33,25 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
         if (!API_KEY) return res.status(500).json({ status: "Error", pesan: "API Key belum diisi!" });
         if (!req.files || !req.files['foto1']) return res.status(400).json({ status: "Error", pesan: "Berkas gambar utama wajib diunggah." });
 
+        const mainImageUrl = await uploadKeFreeImage(req.files['foto1'][0].buffer);
+        
         let TARGET_URL = '';
         let payload = {};
 
         if (fitur === 'upscale') {
-            // ==========================================
-            // LOKET 1: SESUAI CURL DOKUMENTASI UPSCALER RESMI
-            // ==========================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/image-upscaler';
             
-            // Format wajib: Base64 bersih tanpa header data:image/...
-            const base64Bersih = req.files['foto1'][0].buffer.toString('base64');
-
+            // SESUAI KITAB SUCI: Kita setel khusus untuk mengurus foto manusia (soft_portraits)
             payload = {
-                image: base64Bersih,
+                image: mainImageUrl, 
                 webhook_url: `${RAILWAY_URL}/webhook`,
-                scale_factor: quality === '4K' ? "4x" : "2x", // Sesuai dokumentasi: pakai huruf 'x'
-                optimized_for: "standard",
-                engine: "magnific_sparkle" // Engine bawaan dari dokumentasi resmi
+                scale_factor: quality === '4K' ? "4x" : "2x", 
+                optimized_for: "soft_portraits", // <-- Kunci optimasi objek manusianya di sini, Bang!
+                engine: "magnific_sparkle" 
             };
         } else {
-            // ==========================================
-            // LOKET 2: JALUR UGC NANO BANANA PRO (Ganti Baju)
-            // ==========================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
             
-            const mainImageUrl = await uploadKeFreeImage(req.files['foto1'][0].buffer);
             const referenceImages = [];
             referenceImages.push({ image: mainImageUrl, text: "Reference 1", mime_type: req.files['foto1'][0].mimetype || "image/jpeg" });
 
@@ -122,11 +114,9 @@ app.get('/status', async (req, res) => {
         const { taskId, apiKey } = req.query;
         let data = databaseHasil[taskId];
 
-        // Jika data di gudang lokal kita belum lengkap, kita jemput paksa ke Magnific
         if (!data || data.status === "PENDING" || (data.status === "COMPLETED" && !data.image_url && !data.generated)) {
              const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
              
-             // Atur URL pengecekan status berdasarkan jenis fiturnya
              const CHECK_URL = data?.used_fitur === 'upscale' 
                 ? 'https://api.magnific.com/v1/ai/image-upscaler' 
                 : `https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro?task_id=${taskId}`;
@@ -134,7 +124,6 @@ app.get('/status', async (req, res) => {
              let response = await axios.get(CHECK_URL, { headers: {'x-magnific-api-key': API_KEY} });
              let magData = response.data.data || response.data;
              
-             // Sesuai dokumentasi GET Upscaler: cari task kita di dalam tumpukan daftar array
              if (Array.isArray(magData)) {
                  const tumpukanTask = magData.find(item => item.task_id === taskId);
                  if (tumpukanTask) magData = tumpukanTask;
