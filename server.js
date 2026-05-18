@@ -3,6 +3,7 @@ const cors = require('cors');
 const multer = require('multer');
 const axios = require('axios');
 const FormData = require('form-data'); 
+const sharp = require('sharp'); // <-- Senjata rahasia pencuci gambar aktif!
 
 const app = express();
 const upload = multer();
@@ -15,12 +16,19 @@ app.use(express.text());
 const RAILWAY_URL = 'https://herra-backend3-production.up.railway.app'; 
 const databaseHasil = {};
 
+// Kurir Utama dengan sistem otomatis convert ke JPEG standar
 async function uploadKeFreeImage(buffer) {
+    // Kunci Sukses: Cuci gambar dan paksa konversi ke JPEG standar biar gak corrupt
+    const bufferBersih = await sharp(buffer)
+        .jpeg({ quality: 95 }) // Ubah paksa ke JPEG kualitas tinggi
+        .toBuffer();
+
     const form = new FormData();
     form.append('key', '6d207e02198a847aa98d0a2a901485a5');
     form.append('action', 'upload');
-    form.append('source', buffer.toString('base64'));
+    form.append('source', bufferBersih.toString('base64'));
     form.append('format', 'json');
+    
     const uploadRes = await axios.post('https://freeimage.host/api/1/upload', form, { headers: form.getHeaders() });
     return uploadRes.data.image.url;
 }
@@ -33,6 +41,7 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
         if (!API_KEY) return res.status(500).json({ status: "Error", pesan: "API Key belum diisi!" });
         if (!req.files || !req.files['foto1']) return res.status(400).json({ status: "Error", pesan: "Berkas gambar utama wajib diunggah." });
 
+        // Gambar otomatis dicuci lewat FreeImage + Sharp
         const mainImageUrl = await uploadKeFreeImage(req.files['foto1'][0].buffer);
         
         let TARGET_URL = '';
@@ -41,27 +50,27 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
         if (fitur === 'upscale') {
             TARGET_URL = 'https://api.magnific.com/v1/ai/image-upscaler';
             
-            // SESUAI KITAB SUCI: Kita setel khusus untuk mengurus foto manusia (soft_portraits)
             payload = {
                 image: mainImageUrl, 
                 webhook_url: `${RAILWAY_URL}/webhook`,
                 scale_factor: quality === '4K' ? "4x" : "2x", 
-                optimized_for: "soft_portraits", // <-- Kunci optimasi objek manusianya di sini, Bang!
+                optimized_for: "soft_portraits", 
                 engine: "magnific_sparkle" 
             };
         } else {
             TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
             
             const referenceImages = [];
-            referenceImages.push({ image: mainImageUrl, text: "Reference 1", mime_type: req.files['foto1'][0].mimetype || "image/jpeg" });
+            // Karena sudah diconvert paksa ke JPEG oleh Sharp, mime_type disetel image/jpeg
+            referenceImages.push({ image: mainImageUrl, text: "Reference 1", mime_type: "image/jpeg" });
 
             if (req.files['foto2']) {
                 const url = await uploadKeFreeImage(req.files['foto2'][0].buffer);
-                referenceImages.push({ image: url, text: "Reference 2", mime_type: req.files['foto2'][0].mimetype || "image/jpeg" });
+                referenceImages.push({ image: url, text: "Reference 2", mime_type: "image/jpeg" });
             }
             if (req.files['foto3']) {
                 const url = await uploadKeFreeImage(req.files['foto3'][0].buffer);
-                referenceImages.push({ image: url, text: "Reference 3", mime_type: req.files['foto3'][0].mimetype || "image/jpeg" });
+                referenceImages.push({ image: url, text: "Reference 3", mime_type: "image/jpeg" });
             }
 
             payload = {
