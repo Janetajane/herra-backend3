@@ -16,9 +16,8 @@ app.use(express.text());
 const RAILWAY_URL = 'https://herra-backend3-production.up.railway.app'; 
 const databaseHasil = {};
 
-// Kurir FreeImage untuk loket UGC Generator
 async function uploadKeFreeImage(buffer) {
-    const bufferBersih = await sharp(buffer).jpeg({ quality: 95 }).toBuffer();
+    const bufferBersih = await sharp(buffer).toFormat('jpeg').jpeg({ quality: 95 }).toBuffer();
     const form = new FormData();
     form.append('key', '6d207e02198a847aa98d0a2a901485a5');
     form.append('action', 'upload');
@@ -40,38 +39,44 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
         let payload = {};
 
         if (fitur === 'upscale') {
-            // ==========================================
-            // LOKET 1: FIX JALUR UPSCALER (PENGECILAN DIMENSI AMAN)
-            // ==========================================
             TARGET_URL = 'https://api.magnific.com/v1/ai/image-upscaler';
             
-            // Trik Sakti: Gunting ukuran gambar input agar total piksel akhir tidak melanggar batas 25.3 juta piksel
-            const base64Aman = await sharp(req.files['foto1'][0].buffer)
-                .resize({ width: 1080, withoutEnlargement: true }) // Paksa lebar ke 1080px (standar HD aman)
-                .jpeg({ quality: 85 })
+            const base64MurniMentah = await sharp(req.files['foto1'][0].buffer)
+                .toFormat('jpeg')
+                .jpeg({ quality: 90 })
                 .toBuffer()
                 .then(buf => buf.toString('base64'));
 
-            // Memasukkan format lengkap string<byte> sesuai kitab suci
-            const formatStringByte = `data:image/jpeg;base64,${base64Aman}`;
-
             payload = {
-                image: formatStringByte, 
+                image: base64MurniMentah, 
                 webhook_url: `${RAILWAY_URL}/webhook`,
                 scale_factor: quality === '4K' ? "4x" : "2x", 
                 optimized_for: "soft_portraits", 
-                creativity: 0, 
-                hdr: 0,
-                resemblance: 0,
-                fractality: 0,
                 engine: "automatic" 
             };
-        } else {
-            // ==========================================
-            // LOKET 2: JALUR UGC NANO BANANA PRO
-            // ==========================================
-            TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
+
+        } else if (fitur === 'flux') {
+            TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/flux-kontext-pro';
+            const mainImageUrl = await uploadKeFreeImage(req.files['foto1'][0].buffer);
             
+            let formatRatio = "square_1_1";
+            if (ratio === "9:16") formatRatio = "social_story_9_16";
+            if (ratio === "1:1") formatRatio = "square_1_1";
+
+            payload = {
+                prompt: promptUtama,
+                input_image: mainImageUrl, 
+                prompt_upsampling: false,
+                guidance: 3,
+                steps: 50,
+                aspect_ratio: formatRatio, 
+                safety_tolerance: 2,
+                output_format: "jpeg",
+                webhook_url: `${RAILWAY_URL}/webhook`
+            };
+
+        } else {
+            TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
             const mainImageUrl = await uploadKeFreeImage(req.files['foto1'][0].buffer);
             const referenceImages = [];
             referenceImages.push({ image: mainImageUrl, text: "Reference 1", mime_type: "image/jpeg" });
@@ -138,9 +143,15 @@ app.get('/status', async (req, res) => {
         if (!data || data.status === "PENDING" || (data.status === "COMPLETED" && !data.image_url && !data.generated)) {
              const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
              
-             const CHECK_URL = data?.used_fitur === 'upscale' 
-                ? `https://api.magnific.com/v1/ai/image-upscaler/${taskId}` 
-                : `https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro?task_id=${taskId}`;
+             // FIX DI SINI: Menyinkronkan rute Path Parameter /{task-id} sesuai dokumen terbaru Abang!
+             let CHECK_URL = '';
+             if (data?.used_fitur === 'upscale') {
+                 CHECK_URL = `https://api.magnific.com/v1/ai/image-upscaler/${taskId}`;
+             } else if (data?.used_fitur === 'flux') {
+                 CHECK_URL = `https://api.magnific.com/v1/ai/text-to-image/flux-kontext-pro/${taskId}`; // Jalur path parameter!
+             } else {
+                 CHECK_URL = `https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro?task_id=${taskId}`;
+             }
 
              let response = await axios.get(CHECK_URL, { headers: {'x-magnific-api-key': API_KEY} });
              let magData = response.data.data || response.data;
@@ -152,10 +163,11 @@ app.get('/status', async (req, res) => {
         let statusData = data?.status || data?.state || "PENDING";
         let imageUrl = null;
         
+        // FIX DI SINI: Menambahkan pembacaan array "generated" sesuai dokumen isi gambar 2890.jpg
         if (statusData === 'COMPLETED' || statusData === 'SUCCESS') {
             if (data.generated && data.generated.length > 0) {
                 if (typeof data.generated[0] === 'string') {
-                    imageUrl = data.generated[0];
+                    imageUrl = data.generated[0]; // Langsung ambil link string di dalam array generated
                 } else {
                     imageUrl = data.generated[0].image || data.generated[0].url;
                 }
