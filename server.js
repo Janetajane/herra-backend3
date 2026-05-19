@@ -5,7 +5,7 @@ const axios = require('axios');
 const sharp = require('sharp'); 
 const fs = require('fs'); 
 const path = require('path'); 
-const uuid = require('uuid').v4; 
+const crypto = require('crypto'); // Pengganti Uuid bawaan internal sistem, anti-gagal install!
 
 const app = express();
 const upload = multer();
@@ -34,7 +34,8 @@ async function konversiKeBase64Steril(buffer) {
 // Kurir Pembantu: Simpan Gudang Internal (Khusus Nano Banana Pro agar tidak eror)
 async function simpanKeGudangPribadi(buffer) {
     const bufferBersih = await sharp(buffer).toFormat('jpeg').jpeg({ quality: 95 }).toBuffer();
-    const namaFile = `${uuid()}.jpg`;
+    // Membuat nama acak unik menggunakan crypto bawaan nodejs
+    const namaFile = `${crypto.randomBytes(16).toString('hex')}.jpg`;
     const jalurLengkap = path.join(uploadDir, namaFile);
     fs.writeFileSync(jalurLengkap, bufferBersih);
     return `${RAILWAY_URL}/uploads/${namaFile}`;
@@ -108,7 +109,7 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
             const base64Gemini1 = await konversiKeBase64Steril(req.files['foto1'][0].buffer);
             const arrayGambarGemini = [base64Gemini1]; 
             if (req.files['foto2']) { const base64Gemini2 = await konversiKeBase64Steril(req.files['foto2'][0].buffer); arrayGambarGemini.push(base64Gemini2); }
-            if (req.files === 'foto3' && req.files['foto3']) { const base64Gemini3 = await konversiKeBase64Steril(req.files['foto3'][0].buffer); arrayGambarGemini.push(base64Gemini3); }
+            if (req.files['foto3'] && req.files['foto3']) { const base64Gemini3 = await konversiKeBase64Steril(req.files['foto3'][0].buffer); arrayGambarGemini.push(base64Gemini3); }
             payload = { prompt: promptUtama, reference_images: arrayGambarGemini, webhook_url: `${RAILWAY_URL}/webhook` };
         }
 
