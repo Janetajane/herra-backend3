@@ -26,12 +26,12 @@ if (!fs.existsSync(uploadDir)) {
 // Buka akses internet folder uploads pribadi
 app.use('/uploads', express.static(uploadDir));
 
-// Kurir Pembantu 1: Base64 steril (Untuk Flux/Gemini/Upscaler/Sutradara)
+// Kurir Pembantu: Base64 steril (Untuk Flux/Gemini Gambar/Upscaler)
 async function konversiKeBase64Steril(buffer) {
     return await sharp(buffer).toFormat('jpeg').jpeg({ quality: 90 }).toBuffer().then(buf => buf.toString('base64'));
 }
 
-// Kurir Pembantu 2: Simpan Gudang Internal (Khusus Nano Banana Pro)
+// Kurir Pembantu: Simpan Gudang Internal (Khusus Nano Banana Pro agar tidak eror)
 async function simpanKeGudangPribadi(buffer) {
     const bufferBersih = await sharp(buffer).toFormat('jpeg').jpeg({ quality: 95 }).toBuffer();
     const namaFile = `${uuid()}.jpg`;
@@ -62,61 +62,11 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
     let urlsToCleanup = [];
 
     try {
-        const { promptUtama, ratio, quality, apiKey, geminiKey, fitur, scene, gender } = req.body;
+        const { promptUtama, ratio, quality, apiKey, fitur } = req.body;
         const MAGNIFIC_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
-        const GEMINI_KEY = geminiKey || process.env.GEMINI_API_KEY;
 
-        if (!req.files || !req.files['foto1']) return res.status(400).json({ status: "Error", pesan: "Berkas gambar utama wajib diunggah." });
-
-        // =========================================================================
-        // LOKET SUTRADARA: AI AUTO SCRIPT (FIX TERBARU 100% TEMBUS) 🔥 🎬
-        // =========================================================================
-        if (fitur === 'sutradara') {
-            if (!GEMINI_KEY) return res.status(500).json({ status: "Error", pesan: "API Key Gemini belum diisi di kotak atas!" });
-            
-            // Konversi gambar produk menjadi Base64 steril untuk mata dewa Gemini
-            const base64FotoSutradara = await konversiKeBase64Steril(req.files['foto1'][0].buffer);
-            
-            const instruksiSutradara = `Kamu adalah Sutradara & Copywriter Affiliate profesional. Saya memberikan sebuah gambar produk jualan.
-Tugasmu: Buatkan naskah video promosi sebanyak ${scene || 3} scene secara terperinci.
-Konteks tambahan dari saya: ${promptUtama || "Tidak ada, tolong buatkan sekreatif mungkin agar viral."}
-
-Format Output Wajib (Pisahkan Per Scene dengan Jelas):
-🎬 **SCENE [NOMOR]**
-🎥 **Prompt Visual Video (Wajib Bahasa Inggris yang sangat detail agar bisa di-copy ke AI Video Generator seperti Luma/Runway):** [Tulis prompt gerakan kameranya dengan lengkap]
-🎙️ **Voice Over / Naskah (Bahasa Indonesia bergaya ${gender || 'Wanita'} gaul, ekspresif, persuasif, jualan harian):** [Tulis kata-kata yang diucapkan narator]
-`;
-
-            const urlGemini = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_KEY}`;
-            
-            const payloadGemini = {
-                contents: [{
-                    parts: [
-                        { text: instruksiSutradara },
-                        { inlineData: { mimeType: "image/jpeg", data: base64FotoSutradara } }
-                    ]
-                }]
-            };
-
-            const resGemini = await axios.post(urlGemini, payloadGemini, { headers: { 'Content-Type': 'application/json' } });
-            
-            if (!resGemini.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-                throw new Error("Respons dari Google Gemini kosong atau tidak valid.");
-            }
-
-            const teksHasilScript = resGemini.data.candidates[0].content.parts[0].text;
-            const fakeTaskId = "SUTRADARA-" + Date.now().toString();
-            
-            // Simpan ke database memori lokal
-            databaseHasil[fakeTaskId] = { status: "COMPLETED", image_url: teksHasilScript, used_fitur: 'sutradara' };
-
-            return res.json({ status: "PENDING", data: { task1: fakeTaskId } });
-        }
-
-        // =========================================================================
-        // JALUR FITUR PENGOLAHAN GAMBAR (MAGNIFIC AI)
-        // =========================================================================
         if (!MAGNIFIC_KEY) return res.status(500).json({ status: "Error", pesan: "API Key Magnific belum diisi!" });
+        if (!req.files || !req.files['foto1']) return res.status(400).json({ status: "Error", pesan: "Berkas gambar utama wajib diunggah." });
         
         let TARGET_URL = '';
         let payload = {};
@@ -158,7 +108,7 @@ Format Output Wajib (Pisahkan Per Scene dengan Jelas):
             const base64Gemini1 = await konversiKeBase64Steril(req.files['foto1'][0].buffer);
             const arrayGambarGemini = [base64Gemini1]; 
             if (req.files['foto2']) { const base64Gemini2 = await konversiKeBase64Steril(req.files['foto2'][0].buffer); arrayGambarGemini.push(base64Gemini2); }
-            if (req.files['foto3']) { const base64Gemini3 = await konversiKeBase64Steril(req.files['foto3'][0].buffer); arrayGambarGemini.push(base64Gemini3); }
+            if (req.files === 'foto3' && req.files['foto3']) { const base64Gemini3 = await konversiKeBase64Steril(req.files['foto3'][0].buffer); arrayGambarGemini.push(base64Gemini3); }
             payload = { prompt: promptUtama, reference_images: arrayGambarGemini, webhook_url: `${RAILWAY_URL}/webhook` };
         }
 
@@ -193,10 +143,6 @@ app.get('/status', async (req, res) => {
     try {
         const { taskId, apiKey } = req.query;
         let data = databaseHasil[taskId];
-
-        if (data && data.used_fitur === 'sutradara') {
-            return res.json({ status: data.status, image_url: data.image_url, raw_data: data });
-        }
 
         if (!data || data.status === "PENDING" || (data.status === "COMPLETED" && !data.image_url && !data.generated)) {
              const API_KEY = apiKey || process.env.MAGNIFIC_API_KEY;
