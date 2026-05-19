@@ -48,12 +48,15 @@ Format Output Wajib (Pisahkan Per Scene dengan Jelas):
 🎙️ **Voice Over / Naskah (Bahasa Indonesia bergaya ${gender} gaul, persuasif, jualan):** [Tulis apa yang diucapkan narator]
 `;
 
-            const urlGemini = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+            // FIX 1: Menggunakan alias nama model yang benar yaitu -latest
+            const urlGemini = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_KEY}`;
+            
+            // FIX 2: Menggunakan standar CamelCase Google (inlineData & mimeType)
             const payloadGemini = {
                 contents: [{
                     parts: [
                         { text: instruksiSutradara },
-                        { inline_data: { mime_type: "image/jpeg", data: base64Foto1 } }
+                        { inlineData: { mimeType: "image/jpeg", data: base64Foto1 } }
                     ]
                 }]
             };
@@ -61,7 +64,6 @@ Format Output Wajib (Pisahkan Per Scene dengan Jelas):
             const resGemini = await axios.post(urlGemini, payloadGemini, { headers: { 'Content-Type': 'application/json' } });
             const teksHasilScript = resGemini.data.candidates[0].content.parts[0].text;
 
-            // Memanipulasi alur agar seolah-olah diproses seperti Magnific (supaya frontend gak perlu dirombak total)
             const fakeTaskId = "SUTRADARA-" + Date.now().toString();
             databaseHasil[fakeTaskId] = { status: "COMPLETED", image_url: teksHasilScript, used_fitur: 'sutradara' };
 
@@ -137,7 +139,6 @@ app.get('/status', async (req, res) => {
         const { taskId, apiKey } = req.query;
         let data = databaseHasil[taskId];
 
-        // Jika fiturnya Sutradara, dia gak usah nembak Magnific, langsung balikin teks dari database lokal.
         if (data && data.used_fitur === 'sutradara') {
             return res.json({ status: data.status, image_url: data.image_url, raw_data: data });
         }
@@ -176,3 +177,4 @@ app.get('/status', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server HERRA AI aktif gagah di port ${PORT}`));
+                                                                                      
