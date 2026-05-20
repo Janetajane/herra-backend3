@@ -5,7 +5,7 @@ const axios = require('axios');
 const sharp = require('sharp'); 
 const fs = require('fs'); 
 const path = require('path'); 
-const crypto = require('crypto'); // Pengganti Uuid bawaan internal sistem, anti-gagal install!
+const crypto = require('crypto'); 
 
 const app = express();
 const upload = multer();
@@ -26,22 +26,21 @@ if (!fs.existsSync(uploadDir)) {
 // Buka akses internet folder uploads pribadi
 app.use('/uploads', express.static(uploadDir));
 
-// Kurir Pembantu: Base64 steril (Untuk Flux/Gemini Gambar/Upscaler)
+// Kurir Pembantu: Base64 steril
 async function konversiKeBase64Steril(buffer) {
     return await sharp(buffer).toFormat('jpeg').jpeg({ quality: 90 }).toBuffer().then(buf => buf.toString('base64'));
 }
 
-// Kurir Pembantu: Simpan Gudang Internal (Khusus Nano Banana Pro agar tidak eror)
+// Kurir Pembantu: Simpan Gudang Internal (Anti-Blokir Format)
 async function simpanKeGudangPribadi(buffer) {
     const bufferBersih = await sharp(buffer).toFormat('jpeg').jpeg({ quality: 95 }).toBuffer();
-    // Membuat nama acak unik menggunakan crypto bawaan nodejs
     const namaFile = `${crypto.randomBytes(16).toString('hex')}.jpg`;
     const jalurLengkap = path.join(uploadDir, namaFile);
     fs.writeFileSync(jalurLengkap, bufferBersih);
     return `${RAILWAY_URL}/uploads/${namaFile}`;
 }
 
-// Penghapus File di Gudang biar gak menumpuk di Railway
+// Penghapus File di Gudang
 function hapusFileGudang(urlLengkap) {
     try {
         if (!urlLengkap || !urlLengkap.includes('/uploads/')) return;
@@ -87,8 +86,18 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
             if (req.files['foto2']) payload.input_image_2 = await konversiKeBase64Steril(req.files['foto2'][0].buffer);
             if (req.files['foto3']) payload.input_image_3 = await konversiKeBase64Steril(req.files['foto3'][0].buffer);
             if (ratio === "9:16") { payload.width = 768; payload.height = 1440; } else { payload.width = 1024; payload.height = 1024; }
-        } else if (fitur === 'ugc') {
-            TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
+        
+        // =========================================================
+        // JALUR TAMBAHAN BARU: NANO BANANA PRO FLASH (KILAT DEWA) ⚡ 🍌
+        // =========================================================
+        } else if (fitur === 'ugc-flash' || fitur === 'ugc') {
+            
+            if (fitur === 'ugc-flash') {
+                TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro-flash';
+            } else {
+                TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro';
+            }
+            
             const mainImageUrl = await simpanKeGudangPribadi(req.files['foto1'][0].buffer);
             urlsToCleanup.push(mainImageUrl); 
 
@@ -103,7 +112,15 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
                 referenceImages.push({ image: url3, text: "Reference 3", mime_type: "image/jpeg" });
                 urlsToCleanup.push(url3);
             }
-            payload = { prompt: promptUtama, webhook_url: `${RAILWAY_URL}/webhook`, reference_images: referenceImages, aspect_ratio: ratio || "1:1", resolution: quality || "2K" };
+            
+            payload = { 
+                prompt: promptUtama, 
+                webhook_url: `${RAILWAY_URL}/webhook`, 
+                reference_images: referenceImages, 
+                aspect_ratio: ratio || "1:1", 
+                resolution: quality || "1K" 
+            };
+            
         } else {
             TARGET_URL = 'https://api.magnific.com/v1/ai/gemini-2-5-flash-image-preview';
             const base64Gemini1 = await konversiKeBase64Steril(req.files['foto1'][0].buffer);
@@ -151,6 +168,7 @@ app.get('/status', async (req, res) => {
              if (data?.used_fitur === 'upscale') CHECK_URL = `https://api.magnific.com/v1/ai/image-upscaler/${taskId}`;
              else if (data?.used_fitur === 'flux') CHECK_URL = `https://api.magnific.com/v1/ai/text-to-image/flux-2-pro/${taskId}`;
              else if (data?.used_fitur === 'ugc') CHECK_URL = `https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro?task_id=${taskId}`;
+             else if (data?.used_fitur === 'ugc-flash') CHECK_URL = `https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro-flash?task_id=${taskId}`;
              else if (data?.used_fitur === 'scan') CHECK_URL = `https://api.magnific.com/v1/ai/image-to-prompt/${taskId}`;
              else CHECK_URL = `https://api.magnific.com/v1/ai/gemini-2-5-flash-image-preview/${taskId}`;
 
@@ -184,3 +202,4 @@ app.get('/status', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server HERRA AI aktif gagah di port ${PORT}`));
+            
