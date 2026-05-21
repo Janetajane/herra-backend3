@@ -87,11 +87,7 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
             if (req.files['foto3']) payload.input_image_3 = await konversiKeBase64Steril(req.files['foto3'][0].buffer);
             if (ratio === "9:16") { payload.width = 768; payload.height = 1440; } else { payload.width = 1024; payload.height = 1024; }
         
-        // =========================================================
-        // JALUR TAMBAHAN BARU: NANO BANANA PRO FLASH (KILAT DEWA) ⚡ 🍌
-        // =========================================================
         } else if (fitur === 'ugc-flash' || fitur === 'ugc') {
-            
             if (fitur === 'ugc-flash') {
                 TARGET_URL = 'https://api.magnific.com/v1/ai/text-to-image/nano-banana-pro-flash';
             } else {
@@ -113,11 +109,17 @@ app.post('/generate', upload.fields([{ name: 'foto1' }, { name: 'foto2' }, { nam
                 urlsToCleanup.push(url3);
             }
             
+            // FIX TERBARU: Penyesuaian string aspect_ratio agar dibaca mulus oleh mesin Banana Magnific
+            let bananaRatio = "1:1";
+            if (ratio === "9:16") {
+                bananaRatio = "9:16";
+            }
+            
             payload = { 
                 prompt: promptUtama, 
                 webhook_url: `${RAILWAY_URL}/webhook`, 
                 reference_images: referenceImages, 
-                aspect_ratio: ratio || "1:1", 
+                aspect_ratio: bananaRatio, 
                 resolution: quality || "1K" 
             };
             
@@ -202,4 +204,4 @@ app.get('/status', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server HERRA AI aktif gagah di port ${PORT}`));
-            
+                
